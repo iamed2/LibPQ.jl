@@ -1,6 +1,8 @@
+![LibPQ.jl Logo](docs/src/assets/full-logo.svg "LibPQ.jl logo")
+
 # LibPQ
 
-LibPQ.jl is a Julia wrapper for the PostgreSQL `libpq` C library.
+LibPQ.jl is a Julia wrapper for the PostgreSQL `libpq` [C library](https://www.postgresql.org/docs/current/libpq.html).
 
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://invenia.github.io/LibPQ.jl/stable/)
 [![In Development](https://img.shields.io/badge/docs-dev-blue.svg)](https://invenia.github.io/LibPQ.jl/dev/)
@@ -12,7 +14,7 @@ LibPQ.jl is a Julia wrapper for the PostgreSQL `libpq` C library.
 ### Current
 
 * Build
-  * Installs `libpq` via `BinaryProvider` for MacOS, GNU Linux, and Windows
+  * Installs `libpq` via `BinaryBuilder.jl` for MacOS, GNU Linux, and Windows
 * Connections
   * Connect via DSN
   * Connect via PostgreSQL connection string

@@ -1,4 +1,8 @@
+![LibPQ.jl Logo](assets/full-logo.svg)
+
 # LibPQ
+
+A Julia wrapper for the PostgreSQL `libpq` [C library](https://www.postgresql.org/docs/current/libpq.html).
 
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://invenia.github.io/LibPQ.jl/stable/)
 [![In Development](https://img.shields.io/badge/docs-dev-blue.svg)](https://invenia.github.io/LibPQ.jl/dev/)
