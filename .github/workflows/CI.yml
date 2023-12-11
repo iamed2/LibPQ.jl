@@ -13,7 +13,7 @@ env:
   PGPASSWORD: root
 jobs:
   test:
-    name: Julia ${{ matrix.version }} - PostgreSQL ${{ matrix.postgresql-version }} - ${{ matrix.os }} - ${{ matrix.arch }}
+    name: Julia ${{ matrix.version }} - PostgreSQL ${{ matrix.postgresql-version }} - ${{ matrix.os }} - ${{ matrix.arch }} - nonblocking connection(${{ matrix.nonblocking }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -29,6 +29,8 @@ jobs:
         arch:
           - x64
           - x86
+        nonblocking:
+          - "false"
         exclude:
           # Don't test 32-bit on macOS
           - os: macOS-latest
@@ -39,23 +41,48 @@ jobs:
             version: "1.6"
             arch: x64
             postgresql-version: latest
+            nonblocking: "false"
           # Add older supported PostgreSQL Versions
           - os: ubuntu-latest
             version: 1
             arch: x64
             postgresql-version: '13'
+            nonblocking: "false"
           - os: ubuntu-latest
             version: 1
             arch: x64
             postgresql-version: '12'
+            nonblocking: "false"
           - os: ubuntu-latest
             version: 1
             arch: x64
             postgresql-version: '11'
+            nonblocking: "false"
           - os: ubuntu-latest
             version: 1
             arch: x64
             postgresql-version: '10'
+            nonblocking: "false"
+          - os: ubuntu-latest
+            version: 1
+            arch: x64
+            postgresql-version: latest
+            nonblocking: "true"
+          - os: ubuntu-latest
+            version: "1.6"
+            arch: x64
+            postgresql-version: latest
+            nonblocking: "true"
+          - os: windows-latest
+            version: 1
+            arch: x64
+            postgresql-version: latest
+            nonblocking: "true"
+          - os: macOS-latest
+            version: 1
+            arch: x64
+            postgresql-version: latest
+            nonblocking: "true"
     steps:
       - uses: actions/checkout@v2
       - uses: julia-actions/setup-julia@v1
@@ -67,7 +94,7 @@ jobs:
           cache-name: cache-artifacts
         with:
           path: ~/.julia/artifacts
-          key: ${{ runner.os }}-${{ matrix.arch }}-test-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
+          key: ${{ runner.os }}-${{ matrix.arch }}-test-${{ env.cache-name }}-nonblocking-${{ matrix.nonblocking }}-${{ hashFiles('**/Project.toml') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.arch }}-test-${{ env.cache-name }}-
             ${{ runner.os }}-${{ matrix.arch }}-test-
@@ -116,6 +143,7 @@ jobs:
           pg_ctl -D $env:PGDATA status
         if: ${{ runner.os == 'Windows' }}
       # Run Tests
+      - run: echo "LIBPQJL_CONNECTION_NONBLOCKING=${{ matrix.nonblocking }}" >> $GITHUB_ENV
       - run: psql -c '\conninfo'
       - uses: julia-actions/julia-buildpkg@latest
       - uses: julia-actions/julia-runtest@latest

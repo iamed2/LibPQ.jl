@@ -40,7 +40,8 @@ function count_allocs(f, args...)
     return Base.gc_alloc_count(stats.gcstats)
 end
 
-@testset "LibPQ" begin
+usenonblocking = get(ENV, "LIBPQJL_CONNECTION_NONBLOCKING", "false") === "true"
+@testset "LibPQ $(usenonblocking ? "(nonblocking connection)" : "")" begin
 
 @testset "ConninfoDisplay" begin
     @test parse(LibPQ.ConninfoDisplay, "") == LibPQ.Normal
@@ -81,7 +82,8 @@ end
     DATABASE_USER = get(ENV, "LIBPQJL_DATABASE_USER", "postgres")
 
     @testset "Example SELECT" begin
-        conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=false)
+        conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=false, nonblocking=usenonblocking)
+        
         @test conn isa LibPQ.Connection
         @test isopen(conn)
         @test status(conn) == LibPQ.libpq_c.CONNECTION_OK
@@ -189,7 +191,7 @@ end
     end
 
     @testset "Example INSERT and DELETE" begin
-        conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER")
+        conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; nonblocking=usenonblocking)
 
         result = execute(conn, """
             CREATE TEMPORARY TABLE libpqjl_test (
@@ -332,7 +334,7 @@ end
 
     @testset "load!" begin
         @testset "issue #204" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER")
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; nonblocking=usenonblocking)
 
             close(execute(conn, """
                 CREATE TEMPORARY TABLE libpqjl_test (
@@ -356,7 +358,7 @@ end
 
     @testset "COPY FROM" begin
         @testset "Example COPY FROM" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER")
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; nonblocking=usenonblocking)
 
             result = execute(conn, """
                 CREATE TEMPORARY TABLE libpqjl_test (
@@ -400,7 +402,7 @@ end
         end
 
         @testset "Wrong column order" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER")
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; nonblocking=usenonblocking)
 
             result = execute(conn, """
                 CREATE TEMPORARY TABLE libpqjl_test (
@@ -457,7 +459,7 @@ end
         @testset "do" begin
             local saved_conn
 
-            was_open = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true) do jl_conn
+            was_open = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking) do jl_conn
                 saved_conn = jl_conn
                 return isopen(jl_conn)
             end
@@ -465,7 +467,7 @@ end
             @test was_open
             @test !isopen(saved_conn)
 
-            @test_throws LibPQ.Errors.PQConnectionError LibPQ.Connection("dbname=123fake user=$DATABASE_USER"; throw_error=true) do jl_conn
+            @test_throws LibPQ.Errors.PQConnectionError LibPQ.Connection("dbname=123fake user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking) do jl_conn
                 saved_conn = jl_conn
                 @test false
             end
@@ -474,14 +476,14 @@ end
         end
 
         @testset "Version Numbers" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             # update this test before PostgreSQL 20.0 ;)
             @test LibPQ.pqv"7" <= LibPQ.server_version(conn) <= LibPQ.pqv"20"
         end
 
         @testset "Encoding" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             @test LibPQ.encoding(conn) == "UTF8"
 
@@ -512,6 +514,7 @@ end
                 options=Dict("IntervalStyle" => "postgres_verbose"),
                 throw_error=true,
                 type_map=Dict(:interval => String),
+                nonblocking=usenonblocking
             )
 
             conn_info = LibPQ.conninfo(conn)
@@ -631,7 +634,8 @@ end
 
         @testset "Finalizer" begin
             closed_flags = map(1:50) do _
-                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER")
+                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; nonblocking=usenonblocking)
+
                 closed = conn.closed
                 finalize(conn)
                 return closed
@@ -645,7 +649,8 @@ end
             results = LibPQ.Result[]
 
             closed_flags = map(1:50) do _
-                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER")
+                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; nonblocking=usenonblocking)
+
                 push!(results, execute(conn, "SELECT 1;"))
                 return conn.closed
             end
@@ -660,7 +665,8 @@ end
 
             # with AsyncResults, which hold a reference to Connection
             closed_flags = asyncmap(1:50) do _
-                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER")
+                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; nonblocking=usenonblocking)
+
                 wait(async_execute(conn, "SELECT pg_sleep(1);"))
                 return conn.closed
             end
@@ -706,7 +712,8 @@ end
             end
 
             @testset "throw_error=false" begin
-                conn = LibPQ.Connection("dbname=123fake user=$DATABASE_USER"; throw_error=false)
+                conn = LibPQ.Connection("dbname=123fake user=$DATABASE_USER"; throw_error=false, nonblocking=usenonblocking)
+
                 @test conn isa LibPQ.Connection
                 @test status(conn) == LibPQ.libpq_c.CONNECTION_BAD
                 @test isopen(conn)
@@ -724,7 +731,8 @@ end
             @testset "throw_error=true" begin
                 @test_throws LibPQ.Errors.PQConnectionError LibPQ.Connection("dbname=123fake user=$DATABASE_USER"; throw_error=true)
 
-                conn = LibPQ.Connection("dbname=123fake user=$DATABASE_USER"; throw_error=false)
+                conn = LibPQ.Connection("dbname=123fake user=$DATABASE_USER"; throw_error=false, nonblocking=usenonblocking)
+
                 @test conn isa LibPQ.Connection
                 @test status(conn) == LibPQ.libpq_c.CONNECTION_BAD
                 @test isopen(conn)
@@ -739,7 +747,7 @@ end
 
     @testset "Results" begin
         @testset "Nulls" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             result = execute(conn, "SELECT NULL"; throw_error=true)
             @test status(result) == LibPQ.libpq_c.PGRES_TUPLES_OK
@@ -823,7 +831,7 @@ end
         end
 
         @testset "Not Nulls" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             result = execute(conn, "SELECT NULL"; not_null=[false], throw_error=true)
             @test status(result) == LibPQ.libpq_c.PGRES_TUPLES_OK
@@ -948,7 +956,7 @@ end
         end
 
         @testset "Tables.jl" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             result = execute(conn, """
                 SELECT no_nulls, yes_nulls FROM (
@@ -990,7 +998,7 @@ end
         end
 
         @testset "Duplicate names" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             result = execute(conn, "SELECT 1 AS col, 2 AS col;", not_null=true, throw_error=true)
             columns = Tables.columns(result)
@@ -1006,7 +1014,7 @@ end
         end
 
         @testset "Uppercase Columns" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             result = execute(conn, "SELECT 1 AS \"Column\";")
             @test num_columns(result) == 1
@@ -1024,7 +1032,7 @@ end
         end
 
         @testset "PQResultError" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             try
                 execute(conn, "SELECT log(-1);")
@@ -1071,7 +1079,7 @@ end
 
         @testset "Type Conversions" begin
             @testset "Deprecations" begin
-                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
                 result = execute(conn, "SELECT 'infinity'::timestamp;")
 
@@ -1088,7 +1096,7 @@ end
             end
 
             @testset "Automatic" begin
-                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
                 result = execute(conn, """
                     SELECT oid, typname, typlen, typbyval, typcategory
@@ -1119,7 +1127,7 @@ end
             end
 
             @testset "Overrides" begin
-                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
                 result = execute(conn, "SELECT 4::bigint;")
                 @test first(first(result)) === Int64(4)
@@ -1168,7 +1176,8 @@ end
 
                 @testset for binary_format in (LibPQ.TEXT, LibPQ.BINARY)
                     @testset "Default Types" begin
-                        conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+                        conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
+
 
                         test_data = [
                             ("3", Cint(3)),
@@ -1334,7 +1343,7 @@ end
                     end
 
                     @testset "Specified Types" begin
-                        conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+                        conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
                         test_data = [
                             ("3", UInt, UInt(3)),
@@ -1427,7 +1436,7 @@ end
         end
 
         @testset "Parameters" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             @testset "Arrays" begin
                 tests = (
@@ -1541,7 +1550,7 @@ end
         end
 
         @testset "SQLString" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER")
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; nonblocking=usenonblocking)
 
             execute(conn, sql```
                CREATE TEMPORARY TABLE libpq_test_users (
@@ -1576,7 +1585,7 @@ end
 
         @testset "Query Errors" begin
             @testset "Syntax Errors" begin
-                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
                 result = execute(conn, "SELORCT NUUL;"; throw_error=false)
                 @test status(result) == LibPQ.libpq_c.PGRES_FATAL_ERROR
@@ -1594,7 +1603,7 @@ end
             end
 
             @testset "Wrong No. Parameters" begin
-                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
                 result = execute(conn, "SELORCT \$1;", String[]; throw_error=false)
                 @test status(result) == LibPQ.libpq_c.PGRES_FATAL_ERROR
@@ -1618,7 +1627,7 @@ end
         end
 
         @testset "Interface Errors" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             result = execute(
                 conn,
@@ -1651,7 +1660,7 @@ end
             ]
 
                 # Establish connection and construct temporary table.
-                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER")
+                conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; nonblocking=usenonblocking)
 
                 # Get the column.
                 result = execute(
@@ -1677,7 +1686,7 @@ end
 
     @testset "Statements" begin
         @testset "No Params, Output" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             stmt = prepare(conn, "SELECT oid, typname FROM pg_type")
 
@@ -1698,7 +1707,7 @@ end
         end
 
         @testset "Params, Output" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             stmt = prepare(conn, "SELECT oid, typname FROM pg_type WHERE oid = \$1")
 
@@ -1723,11 +1732,11 @@ end
         end
     end
 
-    @testset "AsyncResults" begin
+    @testset "AsyncResults (usenonblocking connection=$usenonblocking)" begin
         trywait(ar::LibPQ.AsyncResult) = (try wait(ar) catch end; nothing)
 
         @testset "Basic" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             ar = async_execute(conn, "SELECT pg_sleep(2);"; throw_error=false)
             yield()
@@ -1749,7 +1758,7 @@ end
         end
 
         @testset "Parameters" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             ar = async_execute(
                 conn,
@@ -1781,7 +1790,7 @@ end
 
         # Ensures queries wait for previous query completion before starting
         @testset "Wait in line to complete" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             first_ar = async_execute(conn, "SELECT pg_sleep(4);")
             yield()
@@ -1810,7 +1819,7 @@ end
         end
 
         @testset "Cancel" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             # final query needs to be one that actually does something
             # on Windows, first query also needs to do something
@@ -1842,7 +1851,7 @@ end
         end
 
         @testset "Canceled by closing connection" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             # final query needs to be one that actually does something
             # on Windows, first query also needs to do something
@@ -1874,7 +1883,7 @@ end
         end
 
         @testset "FDWatcher: bad file descriptor (EBADF)" begin
-            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true)
+            conn = LibPQ.Connection("dbname=postgres user=$DATABASE_USER"; throw_error=true, nonblocking=usenonblocking)
 
             ar = async_execute(conn, "SELECT pg_sleep(3); SELECT * FROM pg_type;")
             yield()

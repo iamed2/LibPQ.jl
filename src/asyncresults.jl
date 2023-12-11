@@ -84,7 +84,8 @@ function _consume(jl_conn::Connection)
     # this is important?
     # https://github.com/postgres/postgres/blob/master/src/interfaces/libpq/fe-exec.c#L1266
     # if we used non-blocking connections we would need to check for `1` as well
-    if libpq_c.PQflush(jl_conn.conn) < 0
+    # See _flush(jl_conn::Connection) in connections.jl
+    if !_flush(jl_conn)
         error(LOGGER, Errors.PQConnectionError(jl_conn))
     end
 
@@ -231,7 +232,7 @@ end
 
 function _multi_async_execute(jl_conn::Connection, query::AbstractString; kwargs...)
     async_result = _async_execute(jl_conn; kwargs...) do jl_conn
-        _async_submit(jl_conn.conn, query)
+        _async_submit(jl_conn, query)
     end
 
     return async_result
@@ -252,9 +253,10 @@ function async_execute(
     string_params = string_parameters(parameters)
     pointer_params = parameter_pointers(string_params)
 
-    async_result = _async_execute(jl_conn; binary_format=binary_format, kwargs...) do jl_conn
+    async_result =
+        _async_execute(jl_conn; binary_format=binary_format, kwargs...) do jl_conn
             GC.@preserve string_params _async_submit(
-                jl_conn.conn, query, pointer_params; binary_format=binary_format
+                jl_conn, query, pointer_params; binary_format=binary_format
             )
         end
 
@@ -289,16 +291,22 @@ function _async_execute(
     return async_result
 end
 
-function _async_submit(conn_ptr::Ptr{libpq_c.PGconn}, query::AbstractString)
-    return libpq_c.PQsendQuery(conn_ptr, query) == 1
+function _async_submit(jl_conn::Connection, query::AbstractString)
+    send_status = libpq_c.PQsendQuery(jl_conn.conn::Ptr{libpq_c.PGconn}, query)
+    if isnonblocking(jl_conn)
+        return _flush(jl_conn)
+    else
+        return send_status == 1
+    end
 end
 
 function _async_submit(
-    conn_ptr::Ptr{libpq_c.PGconn},
+    jl_conn::Connection,
     query::AbstractString,
     parameters::Vector{Ptr{UInt8}};
     binary_format::Bool=false,
 )
+    conn_ptr::Ptr{libpq_c.PGconn} = jl_conn.conn
     num_params = length(parameters)
 
     send_status = libpq_c.PQsendQueryParams(
@@ -311,6 +319,11 @@ function _async_submit(
         zeros(Cint, num_params),  # all parameters in text format
         Cint(binary_format),  # return result in text or binary format
     )
-
-    return send_status == 1
+    # send_status must be 1
+    # if nonblock, we also want to _flush
+    if isnonblocking(jl_conn)
+        return send_status == 1 && _flush(jl_conn)
+    else
+        return send_status == 1
+    end
 end

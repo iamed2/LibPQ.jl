@@ -267,6 +267,7 @@ function Connection(
     throw_error::Bool=true,
     connect_timeout::Real=0,
     options::Dict{String, String}=CONNECTION_OPTION_DEFAULTS,
+    nonblocking::Bool=false,
     kwargs...
 )
     if options === CONNECTION_OPTION_DEFAULTS
@@ -300,7 +301,7 @@ function Connection(
     )
 
     # If password needed and not entered, prompt the user
-    if libpq_c.PQconnectionNeedsPassword(jl_conn.conn) == 1
+    connection = if libpq_c.PQconnectionNeedsPassword(jl_conn.conn) == 1
         push!(keywords, "password")
         user = unsafe_string(libpq_c.PQuser(jl_conn.conn))
         # close this connection; will open another one below with the user-provided password
@@ -309,7 +310,7 @@ function Connection(
         pass = Base.getpass(prompt)
         push!(values, read(pass, String))
         Base.shred!(pass)
-        return handle_new_connection(
+        handle_new_connection(
             Connection(
                 _connect_nonblocking(keywords, values, false; timeout=connect_timeout);
                 kwargs...
@@ -317,11 +318,25 @@ function Connection(
             throw_error=throw_error,
         )
     else
-        return handle_new_connection(
+        handle_new_connection(
             jl_conn;
             throw_error=throw_error,
         )
     end
+
+    if nonblocking 
+        success = libpq_c.PQsetnonblocking(connection.conn, convert(Cint, nonblocking)) == 0
+        if success
+            return connection
+        elseif throw_error
+            close(connection)
+            error(LOGGER, "Could not provide a non-blocking connection")
+        else
+            warn(LOGGER, "Could not provide a non-blocking connection")
+            return connection
+        end
+    end
+    return connection
 end
 
 # AbstractLock primitives:
@@ -672,7 +687,7 @@ end
 """
     ConnectionOption(pq_opt::libpq_c.PQconninfoOption) -> ConnectionOption
 
-Construct a `ConnectionOption` from a `libpg_c.PQconninfoOption`.
+Construct a `ConnectionOption` from a `libpq_c.PQconninfoOption`.
 """
 function ConnectionOption(pq_opt::libpq_c.PQconninfoOption)
     return ConnectionOption(
@@ -789,3 +804,73 @@ function socket(conn::Ptr{libpq_c.PGconn})
 end
 
 socket(jl_conn::Connection) = socket(jl_conn.conn)
+
+"""
+    setnonblocking(jl_conn::Connection; nonblocking=true)
+
+Sets the nonblocking connection status of the PG connections.
+While async_execute is non-blocking on the receiving side,
+the sending side is still nonblocking without this
+Returns true on success, false on failure
+
+https://www.postgresql.org/docs/current/libpq-async.html
+"""
+function setnonblocking(jl_conn::Connection; nonblocking=true)
+    return libpq_c.PQsetnonblocking(jl_conn.conn, convert(Cint, nonblocking)) == 0
+end
+
+"""
+    isnonblocking(jl_conn::Connection)
+Checks whether the connection is non-blocking.
+Returns true if the connection is set to non-blocking, false otherwise
+
+https://www.postgresql.org/docs/current/libpq-async.html
+"""
+function isnonblocking(jl_conn::Connection)
+    return libpq_c.PQisnonblocking(jl_conn.conn) == 1
+end
+
+"""
+    _flush(jl_conn::Connection)
+
+Do the _flush dance described in the libpq docs. Required when the
+connections are set to nonblocking and we want do send queries/data
+without blocking.
+
+https://www.postgresql.org/docs/current/libpq-async.html#LIBPQ-PQFLUSH
+"""
+function _flush(jl_conn::Connection)
+    local watcher = nothing
+    if isnonblocking(jl_conn)
+        watcher = FDWatcher(socket(jl_conn), true, true)  # can wait for reads and writes
+    end
+    try
+        while true
+            flushstatus = libpq_c.PQflush(jl_conn.conn)
+            # 0 indicates success
+            if flushstatus == 0
+                return true
+            # -1 indicates error
+            elseif flushstatus < 0
+                return false
+            # 1 indicates that we could not send all data without blocking, 
+            elseif flushstatus == 1
+                # need to wait FD
+                # Only applicable when the connection is in nonblocking mode
+                wait(watcher)  # Wait for the watcher
+                # If it becomes write-ready, call PQflush again.
+                if watcher.mask.writable
+                    continue  # Call PGflush again, to send more data
+                end
+                if watcher.mask.readable
+                    # if the stream is readable, we have to consume data from the server first.
+                    success = libpq_c.PQconsumeInput(jl_conn.conn) == 1
+                    !success && return false
+                end
+            end
+        end
+    finally
+        # Just close the watcher
+        !isnothing(watcher) && close(watcher)
+    end
+end
