@@ -111,6 +111,38 @@ Base.convert(::Type{String}, pqv::PQValue) = String(pqv)
 Base.length(pqv::PQValue) = length(string_view(pqv))
 Base.lastindex(pqv::PQValue) = lastindex(string_view(pqv))
 
+# Julia bug override, see https://github.com/iamed2/LibPQ.jl/issues/265 
+# and https://github.com/iamed2/LibPQ.jl/pull/248 for more details
+function _tryparse(::Type{T}, str, timeformat) where {T}
+    @static if v"1.6.6" <= VERSION < v"1.7.0" || VERSION > v"1.7.2"
+        return tryparse(T, str, timeformat)
+    else
+        try
+            return tryparse(T, str, timeformat)
+        catch err
+            if !(err isa InexactError)
+                rethrow(err)
+            end
+        end
+        return nothing
+    end
+end
+
+function _tryparse(::Type{T}, str) where {T}
+    @static if v"1.6.6" <= VERSION < v"1.7.0" || VERSION > v"1.7.2"
+        return tryparse(T, str)
+    else
+        try
+            return tryparse(T, str)
+        catch err
+            if !(err isa InexactError)
+                rethrow(err)
+            end
+        end
+        return nothing
+    end
+end
+
 # Fallback, because Base requires string iteration state to be indices into the string.
 # In an ideal world, PQValue would be an AbstractString and this particular method would
 # not be necessary.
@@ -259,9 +291,10 @@ function pqparse(::Type{DateTime}, str::AbstractString)
     parsed = _tryparse_datetime_inf(DateTime, str)
     isnothing(parsed) || return parsed
 
-    parsed = tryparse(DateTime, str, TIMESTAMP_FORMAT)
+    parsed = _tryparse(DateTime, str, TIMESTAMP_FORMAT)
     isnothing(parsed) || return parsed
 
+    # If there's an error we want to see it here
     return parse(DateTime, _trunc_seconds(str), TIMESTAMP_FORMAT)
 end
 
@@ -279,10 +312,11 @@ function pqparse(::Type{ZonedDateTime}, str::AbstractString)
     isnothing(parsed) || return parsed
 
     for fmt in TIMESTAMPTZ_FORMATS[1:(end - 1)]
-        parsed = tryparse(ZonedDateTime, str, fmt)
+        parsed = _tryparse(ZonedDateTime, str, fmt)
         isnothing(parsed) || return parsed
     end
 
+    # If there's an error we want to see it here
     return parse(ZonedDateTime, _trunc_seconds(str), TIMESTAMPTZ_FORMATS[end])
 end
 
@@ -294,9 +328,10 @@ function pqparse(::Type{UTCDateTime}, str::AbstractString)
     # which is the default
     str = replace(str, "+00" => "")
 
-    parsed = tryparse(UTCDateTime, str, TIMESTAMP_FORMAT)
+    parsed = _tryparse(UTCDateTime, str, TIMESTAMP_FORMAT)
     isnothing(parsed) || return parsed
 
+    # If there's an error we want to see it here
     return parse(UTCDateTime, _trunc_seconds(str), TIMESTAMP_FORMAT)
 end
 
@@ -315,20 +350,11 @@ end
 
 _DEFAULT_TYPE_MAP[:time] = Time
 function pqparse(::Type{Time}, str::AbstractString)
-    @static if v"1.6.6" <= VERSION < v"1.7.0" || VERSION > v"1.7.2"
-        result = tryparse(Time, str)
-        # If there's an error we want to see it here
-        return isnothing(result) ? parse(Time, _trunc_seconds(str)) : result
-    else
-        try
-            return parse(Time, str)
-        catch err
-            if !(err isa InexactError)
-                rethrow(err)
-            end
-        end
-        return parse(Time, _trunc_seconds(str))
-    end
+    parsed = _tryparse(Time, str)
+    isnothing(parsed) || return parsed
+
+    # If there's an error we want to see it here
+    return parse(Time, _trunc_seconds(str))
 end
 
 # InfExtendedTime support for Dates.TimeType
