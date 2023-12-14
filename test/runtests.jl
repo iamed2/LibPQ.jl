@@ -1684,15 +1684,21 @@ end
             @test LibPQ.num_columns(stmt) == 2
             @test LibPQ.num_params(stmt) == 0
             @test LibPQ.column_names(stmt) == ["oid", "typname"]
+            
+            function _test_stmt_exec_1(result)
+                @test LibPQ.num_columns(result) == 2
+                @test LibPQ.column_names(result) == ["oid", "typname"]
+                @test LibPQ.column_types(result) == [LibPQ.Oid, String]
+                @test LibPQ.num_rows(result) > 0
+
+                close(result)
+            end
 
             result = execute(stmt; throw_error=true)
+            _test_stmt_exec_1(result)
 
-            @test LibPQ.num_columns(result) == 2
-            @test LibPQ.column_names(result) == ["oid", "typname"]
-            @test LibPQ.column_types(result) == [LibPQ.Oid, String]
-            @test LibPQ.num_rows(result) > 0
-
-            close(result)
+            result = stmt(; throw_error=true)
+            _test_stmt_exec_1(result)
 
             close(conn)
         end
@@ -1705,19 +1711,28 @@ end
             @test LibPQ.num_columns(stmt) == 2
             @test LibPQ.num_params(stmt) == 1
             @test LibPQ.column_names(stmt) == ["oid", "typname"]
+            
+            function _test_stmt_exec_2(result)
+                @test LibPQ.num_columns(result) == 2
+                @test LibPQ.column_names(result) == ["oid", "typname"]
+                @test LibPQ.column_types(result) == [LibPQ.Oid, String]
+                @test LibPQ.num_rows(result) == 1
+
+                data = columntable(result)
+                @test data[:oid][1] == 16
+                @test data[:typname][1] == "bool"
+
+                close(result)
+            end
 
             result = execute(stmt, [16]; throw_error=true)
+            _test_stmt_exec_2(result)
 
-            @test LibPQ.num_columns(result) == 2
-            @test LibPQ.column_names(result) == ["oid", "typname"]
-            @test LibPQ.column_types(result) == [LibPQ.Oid, String]
-            @test LibPQ.num_rows(result) == 1
+            result = stmt([16]; throw_error=true)
+            _test_stmt_exec_2(result)
 
-            data = columntable(result)
-            @test data[:oid][1] == 16
-            @test data[:typname][1] == "bool"
-
-            close(result)
+            result = stmt(16; throw_error=true)
+            _test_stmt_exec_2(result)
 
             close(conn)
         end

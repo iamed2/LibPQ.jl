@@ -30,6 +30,14 @@ async_result = async_execute(conn, "SELECT typname FROM pg_type WHERE oid = \$1"
 result = fetch(async_result)
 data = columntable(result)
 
+# the same but with prepared statements
+stmt = prepare(conn, "SELECT typname FROM pg_type WHERE oid = \$1")
+result = execute(stmt, ["16"])
+data = columntable(result)
+# or
+result = stmt("16")
+data = columntable(result)
+
 close(conn)
 ```
 

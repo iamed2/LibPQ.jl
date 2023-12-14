@@ -27,6 +27,8 @@ Base.broadcastable(stmt::Statement) = Ref(stmt)
 Create a prepared statement on the PostgreSQL server using libpq.
 The statement is given an generated unique name using [`unique_id`](@ref).
 
+Statements are executable either via `execute(stmt, args...; kwargs...)` or `stmt(args...; kwargs...)`
+
 !!! note
 
     Currently the statement is not explicitly deallocated, but it is deallocated at the end
@@ -160,4 +162,16 @@ function _execute_prepared(
         num_params == 0 ? C_NULL : zeros(Cint, num_params),  # all parameters in text format
         Cint(binary_format),  # return result in text format
     )
+end
+
+function (stmt::Statement)(; kwargs...)
+    execute(stmt; kwargs...)
+end
+
+function (stmt::Statement)(parameters::Union{AbstractVector, Tuple}; kwargs...)
+    execute(stmt, parameters; kwargs...)
+end
+
+function (stmt::Statement)(parameters...; kwargs...)
+    execute(stmt, parameters; kwargs...)
 end
