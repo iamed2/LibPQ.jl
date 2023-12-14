@@ -971,6 +971,7 @@ end
             @test data[1][2] == "bar"
             @test data[2].yes_nulls === missing
             @test data[2][2] === missing
+            @test_throws BoundsError data[1].fake_column
 
             # columns
             ct = Tables.columns(result)

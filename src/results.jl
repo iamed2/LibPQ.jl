@@ -545,7 +545,7 @@ The returned value will be `missing` if `NULL`, or will be of the type specified
 [`column_types`](@ref).
 """
 function Base.getindex(jl_result::Result, row::Integer, col::Integer)
-    if isnull(jl_result, row, col)
+    if isnull(jl_result, row, column_number(jl_result, col))
         return missing
     else
         oid = column_oids(jl_result)[col]
