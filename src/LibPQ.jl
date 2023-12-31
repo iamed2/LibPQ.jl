@@ -16,6 +16,7 @@ using Base.Iterators: zip, product
 using Base.Threads
 
 using Dates
+using DBInterface
 using DocStringExtensions
 using Decimals
 using FileWatching
@@ -28,8 +29,8 @@ using Memento: Memento, getlogger, warn, info, error, debug
 using OffsetArrays
 using SQLStrings
 using TimeZones
+using UUIDs: UUID
 using UTCDateTimes
-using DBInterface
 
 const Parameter = Union{String,Missing}
 const LOGGER = getlogger(@__MODULE__)

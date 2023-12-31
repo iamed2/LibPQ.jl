@@ -211,6 +211,12 @@ function pqparse(::Type{Vector{UInt8}}, bytes::Array{UInt8,1})
     return unescaped_vec
 end
 
+## uuid
+_DEFAULT_TYPE_MAP[:uuid] = UUID
+function Base.parse(::Type{UUID}, pqv::PQBinaryValue{PQ_SYSTEM_TYPES[:uuid]})
+    return UUID(pqparse(UInt128, data_pointer(pqv)))
+end
+
 ## bool
 # TODO: check whether we ever need this or if PostgreSQL always gives t or f
 _DEFAULT_TYPE_MAP[:bool] = Bool
@@ -692,7 +698,7 @@ function array_size(str)
     return dims
 end
 
-for pq_eltype in ("int2", "int4", "int8", "float4", "float8", "oid", "numeric")
+for pq_eltype in ("int2", "int4", "int8", "float4", "float8", "oid", "numeric", "uuid")
     array_oid = PQ_SYSTEM_TYPES[Symbol("_$pq_eltype")]
     jl_type = _DEFAULT_TYPE_MAP[Symbol(pq_eltype)]
     jl_missingtype = Union{jl_type,Missing}
